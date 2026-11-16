@@ -1,0 +1,9 @@
+{
+  "appId": "br.rotaaws.estudos",
+  "appName": "Rota AWS",
+  "webDir": "dist",
+  "android": { "backgroundColor": "#0e1117" },
+  "plugins": {
+    "LocalNotifications": { "iconColor": "#2FC4C4" }
+  }
+}

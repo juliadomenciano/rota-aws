@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1117">
+<title>Rota AWS · Estudos</title>
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+</head>
+<body>
+<header class="top"><div class="in">
+  <button class="menu-btn" id="menuBtn" type="button" aria-label="Abrir menu" aria-controls="drawer" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <span class="top-title" id="topTitle">Rota AWS</span>
+  <button class="mini-timer" id="miniTimer" type="button" aria-label="Abrir pomodoro"><i></i><span></span></button>
+  <span class="sync" id="sync" title="Onde seus dados estão salvos">carregando…</span>
+</div></header>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Menu">
+  <div class="dhead"><img src="icons/icon-192.png" alt=""><div><b>Rota AWS</b><span id="dSub">AWS SAA-C03</span></div></div>
+  <nav class="dnav" id="tabs" aria-label="Seções do app"></nav>
+</aside>
+
+<main>
+  <section class="view" id="v-hoje" aria-labelledby="h-hoje">
+    <div class="vhead"><span class="k" id="hojeData"></span><h1 id="h-hoje">Bom estudo, Maju</h1></div>
+    <div class="cols2">
+      <div class="card accent" id="nextCard"></div>
+      <div class="card">
+        <div class="row between"><h2>Esta semana</h2><span class="muted small num" id="semTxt"></span></div>
+        <div class="bar" style="--c:var(--ok)"><i id="semBar"></i></div>
+        <div class="week" id="weekChart"></div>
+      </div>
+    </div>
+    <div class="stats" id="hojeStats"></div>
+    <div class="cols" id="hojeExtra"></div>
+    <div class="cols">
+      <div class="card">
+        <div class="row between"><h2>Tarefas de hoje</h2><button class="btn sm ghost" type="button" data-go="estudos">Ver todas</button></div>
+        <form class="row" id="quickTask"><input type="text" class="grow" id="qtTxt" placeholder="Nova tarefa para hoje" aria-label="Nova tarefa"><button class="btn sm" type="submit">Adicionar</button></form>
+        <div class="list" id="hojeTasks"></div>
+      </div>
+      <div class="card">
+        <div class="row between"><h2>Horas por seção (semana)</h2></div>
+        <div class="mbars" id="hojeMat"></div>
+      </div>
+    </div>
+  </section>
+  <section class="view" id="v-pomodoro" aria-labelledby="h-pomo">
+    <div class="vhead"><h1 id="h-pomo">Pomodoro</h1><p class="muted">O tempo de foco concluído entra automaticamente nas horas da seção e na trilha.</p></div>
+    <div class="card pomo" id="pomoCard">
+      <div class="msel"><label class="f" style="min-width:220px">Seção do curso<select id="pomoMat"></select></label></div>
+      <div class="ring" id="ring">
+        <svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54" fill="none" stroke="var(--surface2)" stroke-width="8"/><circle id="ringArc" cx="60" cy="60" r="54" fill="none" stroke="var(--acc)" stroke-width="8" stroke-linecap="round" stroke-dasharray="339.3" stroke-dashoffset="0"/></svg>
+        <div class="center"><span class="phase" id="pomoPhase">Foco</span><span class="time" id="pomoTime" role="timer" aria-live="off">25:00</span><span class="sets" id="pomoSets"></span></div>
+      </div>
+      <div class="pomo-ctrl">
+        <button class="btn primary" type="button" id="pStart">Iniciar</button>
+        <button class="btn" type="button" id="pSkip">Pular etapa</button>
+        <button class="btn" type="button" id="pStop">Parar e registrar</button>
+      </div>
+      <p class="muted small" id="pomoNote" aria-live="polite"></p>
+    </div>
+    <div class="cols">
+      <div class="card">
+        <h2>Ajustes do pomodoro</h2>
+        <div class="form">
+          <label class="f">Foco (min)<input type="number" min="5" max="120" id="cfFoco"></label>
+          <label class="f">Pausa curta (min)<input type="number" min="1" max="30" id="cfPausa"></label>
+          <label class="f">Pausa longa (min)<input type="number" min="5" max="60" id="cfLonga"></label>
+          <label class="f">Focos até a pausa longa<input type="number" min="2" max="8" id="cfCiclos"></label>
+        </div>
+        <label class="row small"><input type="checkbox" id="cfSom"> Tocar som ao fim de cada etapa</label>
+        <label class="row small"><input type="checkbox" id="cfAuto"> Começar a próxima etapa sozinho</label>
+      </div>
+      <div class="card">
+        <h2>Registrar estudo sem timer</h2>
+        <p class="muted small">Para quando estudar longe do app, por exemplo assistindo às aulas do curso.</p>
+        <form class="form" id="manualForm">
+          <label class="f">Seção<select id="manMat"></select></label>
+          <label class="f">Minutos<input type="number" min="1" max="600" id="manMin" value="50"></label>
+          <label class="f">Data<input type="date" id="manData"></label>
+          <button class="btn" type="submit">Registrar</button>
+        </form>
+        <div class="list" id="todayLog"></div>
+      </div>
+    </div>
+  </section>
+  <section class="view" id="v-estudos" aria-labelledby="h-est">
+    <div class="vhead"><h1 id="h-est">Trilha de estudos e tarefas</h1><p class="muted">As 19 seções do curso em 8 fases, com as horas planejadas e as realizadas. Se perder um dia, nada fica atrasado: você continua de onde parou.</p></div>
+    <div class="cols2">
+      <div class="card">
+        <div class="row between"><h2>Planejado × realizado</h2><span class="pill num" id="voltaN"></span></div>
+        <div class="bar" style="--c:var(--ok)"><i id="voltaBar"></i></div>
+        <p class="muted small num" id="voltaTxt"></p>
+        <div class="cyc" id="cycList"></div>
+        <div class="row"><button class="btn sm" type="button" id="cycEditBtn">Editar ciclo</button><button class="btn sm ghost" type="button" id="cycNew">Começar nova volta</button></div>
+        <div class="cyc-edit" id="cycEdit" hidden></div>
+      </div>
+      <div class="card">
+        <h2>Metas</h2>
+        <div class="form">
+          <label class="f">Meta semanal (horas)<input type="number" min="1" max="80" id="cfMeta"></label>
+          <label class="f">Data da prova<input type="date" id="cfProva"></label>
+        </div>
+        <p class="muted small">Com ~50 h no total, de 5 a 8 horas por semana fecham a trilha em 7 a 10 semanas.</p>
+        <h2 style="margin-top:6px">Histórico</h2>
+        <div class="stats" id="histStats"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row between"><h2>Tarefas</h2><div class="seg" id="taskFilter"><button type="button" data-f="abertas" aria-pressed="true">Abertas</button><button type="button" data-f="feitas" aria-pressed="false">Feitas</button><button type="button" data-f="todas" aria-pressed="false">Todas</button></div></div>
+      <form class="form" id="taskForm">
+        <label class="f" style="grid-column:span 2">Tarefa<input type="text" id="tTxt" placeholder="Ex.: refazer as questões erradas de VPC"></label>
+        <label class="f">Seção<select id="tMat"></select></label>
+        <label class="f">Para quando<input type="date" id="tData"></label>
+        <button class="btn" type="submit">Adicionar</button>
+      </form>
+      <div class="list" id="taskList"></div>
+    </div>
+  </section>
+  <section class="view" id="v-aulas" aria-labelledby="h-aulas">
+    <div id="aulasCat">
+      <div class="vhead" style="margin-bottom:16px"><h1 id="h-aulas">Aulas</h1><p class="muted">Cada aula é carregada só quando você abre, para o app continuar leve no celular.</p></div>
+      <div class="seg" id="aulaFilter" style="margin-bottom:14px"></div>
+      <div class="cat" id="aulaList"><p class="empty">Carregando aulas…</p></div>
+    </div>
+    <div id="aulaView" hidden></div>
+  </section>
+
+  <section class="view" id="v-qdia" aria-label="Questão do dia"></section>
+  <section class="view" id="v-simulados" aria-label="Simulados"></section>
+  <section class="view" id="v-erros" aria-label="Caderno de erros"></section>
+  <section class="view" id="v-revisao" aria-label="Revisar hoje"></section>
+  <section class="view" id="v-flash" aria-label="Flashcards"></section>
+  <section class="view" id="v-plano" aria-label="Meu plano"></section>
+  <section class="view" id="v-painel" aria-label="Desempenho"></section>
+  <section class="view" id="v-conquistas" aria-label="Conquistas"></section>
+  <section class="view" id="v-config" aria-label="Configurações">
+    <div class="vhead"><h1>Configurações</h1></div>
+    <div class="cols">
+      <div class="card"><h2>Módulos opcionais</h2><div id="cfgMods"></div></div>
+      <div class="card"><h2>Questão do dia</h2><div id="cfgQdia"></div></div>
+      <div class="card" id="cfgRevCard" hidden><h2>Revisão espaçada</h2><div id="cfgRev"></div></div>
+      <div class="card" id="cfgLembCard" hidden><h2>Lembretes</h2><div id="cfgLemb"></div></div>
+      <div class="card">
+        <h2>Conta e backup</h2>
+        <div id="contaBox"></div>
+        <div class="row"><button class="btn sm" type="button" id="bkCopy">Copiar backup</button><button class="btn sm ghost" type="button" id="bkLoad">Restaurar backup</button></div>
+        <textarea id="bkTxt" rows="4" hidden aria-label="Texto do backup"></textarea>
+      </div>
+    </div>
+  </section>
+  <section class="view" id="v-login" aria-label="Entrar"></section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
