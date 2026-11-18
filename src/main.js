@@ -1,6 +1,6 @@
 import './style.css';
 import { start as startSync, markDirty, configured, currentUser, signIn, signUp, signOut, pull } from './sync.js';
-import { setupNative, askPermission, scheduleAlert, cancelAlert, isNative } from './native.js';
+import { setupNative, askPermission, scheduleAlert, cancelAlert, scheduleSeries, cancelSeries, isNative } from './native.js';
 import { getLessonText } from './lessons.js';
 import { initRevisao, applyReminders } from './revisao.js';
 import { initExtras } from './extras.js';
@@ -49,7 +49,7 @@ const DOM=[
 const DM=Object.fromEntries(DOM.map(d=>[d.id,d]));
 const CICLO_SUGERIDO=MAT.filter(m=>m.f>=0).map(m=>({m:m.id,h:m.h}));
 const DEF={
- cfg:{pomo:{foco:25,pausa:5,longa:15,ciclos:4,som:true,auto:false},meta:6,prova:'',ciclo:[],volta:{n:1,feito:{}},mod:{painel:true,patentes:true,conquistas:true},qdia:{n:5,todas:false}},
+ cfg:{somAviso:true,pomo:{foco:25,pausa:5,longa:15,ciclos:4,som:true,auto:false},meta:6,prova:'',ciclo:[],volta:{n:1,feito:{}},mod:{painel:true,patentes:true,conquistas:true},qdia:{n:5,todas:false}},
  tarefas:{lista:[]},
  aulas:{p:{}},
  quest:{hist:{},erros:{},qdia:null,sims:[],marc:{}}
@@ -147,11 +147,12 @@ function pc(){return getDoc('cfg').pomo}
 function faseDur(f){const p=pc();return (f==='foco'?p.foco:f==='pausa'?p.pausa:p.longa)*60000}
 function restante(){return T.rodando?T.fim-Date.now():(T.rest??faseDur(T.fase))}
 function saveT(){local.set('timer',T)}
-function beep(){
-  if(!pc().som)return;
-  try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();const t0=audioCtx.currentTime;
-    [0,0.28,0.56].forEach((o,i)=>{const os=audioCtx.createOscillator(),g=audioCtx.createGain();os.type='sine';os.frequency.value=i===2?988:784;g.gain.setValueAtTime(0.0001,t0+o);g.gain.exponentialRampToValueAtTime(0.25,t0+o+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t0+o+0.24);os.connect(g).connect(audioCtx.destination);os.start(t0+o);os.stop(t0+o+0.26)})}catch(e){}
+function playBeep(){
+  try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();const t0=audioCtx.currentTime+0.02;
+    [0,0.28,0.56].forEach((o,i)=>{const os=audioCtx.createOscillator(),g=audioCtx.createGain();os.type='sine';os.frequency.value=i===2?988:784;g.gain.setValueAtTime(0.0001,t0+o);g.gain.exponentialRampToValueAtTime(0.4,t0+o+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t0+o+0.24);os.connect(g).connect(audioCtx.destination);os.start(t0+o);os.stop(t0+o+0.26)})}catch(e){}
 }
+function beep(){if(!pc().som)return;playBeep()}
+function beepT(force){if(!force&&getDoc('cfg').somAviso===false)return;playBeep();try{navigator.vibrate&&navigator.vibrate([300,120,300])}catch(e){}}
 function unlockAudio(){try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume()}catch(e){}}
 function pomoMat(){return T.m||$('#pomoMat').value||(cycleState().next||{}).m||'s01'}
 function startT(){
@@ -170,18 +171,33 @@ function nextPhase(completedFoco){
   }
   T.rest=null;T.rodando=false;T.inicioFoco=null;
 }
+let completing=false;
 function completePhase(auto){
-  const was=T.fase;
-  if(was==='foco'){addMinutes(T.m||pomoMat(),pc().foco);toast(`Foco concluído: +${pc().foco} min em ${MM[T.m]?.n||''}`)}
-  else toast('Pausa encerrada. Bora voltar!');
-  nextPhase(was==='foco');
-  beep();
-  if(auto&&pc().auto){T.fim=Date.now()+faseDur(T.fase);T.rodando=true;T.rest=null;if(T.fase==='foco')T.inicioFoco=Date.now()}
-  saveT();armAlert();renderPomo();
+  if(completing)return;
+  completing=true;
+  try{
+    const was=T.fase;const mat=T.m||pomoMat();
+    nextPhase(was==='foco');
+    if(auto&&pc().auto){T.fim=Date.now()+faseDur(T.fase);T.rodando=true;T.rest=null;if(T.fase==='foco')T.inicioFoco=Date.now()}
+    saveT();
+    if(was==='foco'){addMinutes(mat,pc().foco);toast(`Foco concluído: +${pc().foco} min em ${MM[mat]?.n||''}`)}
+    else toast('Pausa encerrada. Bora voltar!');
+    beep();
+    armAlert();renderPomo();
+  }finally{completing=false}
 }
 function skipT(){
   if(T.fase==='foco'){const el=elapsedFoco();if(el>=1){addMinutes(T.m||pomoMat(),el);toast(`Registrado: ${fmtH(el)}`)}}
-  nextPhase(false);saveT();cancelAlert();renderPomo();
+  nextPhase(false);
+  if(pc().auto){T.fim=Date.now()+faseDur(T.fase);T.rodando=true;T.rest=null;if(T.fase==='foco')T.inicioFoco=Date.now()}
+  saveT();armAlert();renderPomo();
+}
+function restartT(){
+  if(T.fase==='foco'){const el=elapsedFoco();if(el>=1){addMinutes(T.m||pomoMat(),el);toast(`Registrado: ${fmtH(el)}. Etapa reiniciada.`)}}
+  const was=T.rodando;
+  T.rest=null;T.inicioFoco=null;
+  if(was){T.fim=Date.now()+faseDur(T.fase);if(T.fase==='foco')T.inicioFoco=Date.now()}
+  saveT();armAlert();renderPomo();
 }
 function armAlert(){
   if(!T.rodando){cancelAlert();return}
@@ -214,6 +230,7 @@ function renderPomo(){
   const n=(T.n||0)%p.ciclos;const filled=T.fase==='longa'?p.ciclos:n;
   $('#pomoSets').innerHTML=Array.from({length:p.ciclos},(_,i)=>`<i class="${i<filled?'on':''}" style="--c:${MM[cur]?.c||'var(--acc)'}"></i>`).join('');
   $('#pStart').textContent=T.rodando?'Pausar':(T.rest!=null&&T.rest<faseDur(T.fase)?'Continuar':'Iniciar');
+  $('#pRestart').disabled=!(T.rodando||(T.rest!=null&&T.rest<faseDur(T.fase)));
   $('#pStop').disabled=!(T.fase==='foco'&&(T.rodando||(T.rest!=null&&T.rest<faseDur('foco'))));
   const today=minutesOn(dkey(),cur);
   $('#pomoNote').textContent=`Hoje em ${MM[cur]?.n||''}: ${fmtH(today)}`+(T.fase==='foco'&&!T.rodando?'':'');
@@ -410,9 +427,15 @@ async function showAula(id){
 }
 
 function renderTodayLog(){
-  const k=dkey();const d=getDoc(mkey(k)).d[k]||{};const ent=Object.entries(d).filter(e=>e[1]>0);
-  $('#todayLog').innerHTML=ent.length?'<span class="k">Registrado hoje</span>'+ent.map(([m,v])=>`<div class="li" data-m="${m}" data-v="${v}"><span class="dot" style="--c:${MM[m]?.c}"></span><span class="t">${esc(MM[m]?.n||m)}</span><span class="num small">${fmtH(v)}</span><button class="x" type="button" aria-label="Desfazer registro de hoje">×</button></div>`).join(''):'';
-  $('#todayLog').querySelectorAll('.li').forEach(li=>li.querySelector('.x').onclick=()=>{removeMinutes(li.dataset.m,+li.dataset.v,k);toast('Registro de hoje removido.')});
+  const el=$('#todayLog');
+  const rows=[];
+  for(let i=0;i<30;i++){const k=dkey(addDays(new Date(),-i));const d=getDoc(mkey(k)).d[k]||{};Object.entries(d).filter(e=>e[1]>0).forEach(([m,v])=>rows.push({k,m,v}))}
+  el.innerHTML=rows.length?'<span class="k">Horas registradas (últimos 30 dias)</span>'+rows.map(r=>`<div class="li hl" data-k="${r.k}" data-m="${r.m}" data-v="${r.v}"><span class="dot" style="--c:${MM[r.m]?.c}"></span><span class="t">${esc(MM[r.m]?.n||r.m)}<br><span class="small muted">${r.k===dkey()?'Hoje':fmtDate(r.k)}</span></span><input class="hmin num" type="number" min="0" max="1440" step="1" value="${Math.round(r.v)}" aria-label="Minutos"><span class="small muted">min</span><button class="x" type="button" aria-label="Apagar registro">×</button></div>`).join(''):'';
+  el.querySelectorAll('.li').forEach(li=>{
+    const k=li.dataset.k,m=li.dataset.m,v=+li.dataset.v;
+    li.querySelector('.x').onclick=()=>{removeMinutes(m,v,k);toast('Registro removido.')};
+    li.querySelector('.hmin').onchange=e=>{const n=Math.max(0,Math.min(1440,Math.round(+e.target.value||0)));if(n===Math.round(v))return;if(n<v)removeMinutes(m,v-n,k);else addMinutes(m,n-v,k);toast('Horas ajustadas.')};
+  });
 }
 
 const IC={
@@ -454,6 +477,24 @@ function renderNav(){
 function openDrawer(){$('#drawer').classList.add('open');$('#scrim').classList.add('on');$('#menuBtn').setAttribute('aria-expanded','true')}
 function closeDrawer(){$('#drawer').classList.remove('open');$('#scrim').classList.remove('on');$('#menuBtn').setAttribute('aria-expanded','false')}
 let cur='hoje';
+let backHook=null;
+function askExit(title,text,opts){
+  return new Promise(resolve=>{
+    const bg=document.createElement('div');bg.className='modal-bg';
+    bg.innerHTML=`<div class="modal" role="dialog" aria-modal="true"><h2>${title}</h2><p class="muted">${text}</p>${opts.map((o,i)=>`<button class="btn${o.cls?' '+o.cls:''}" type="button" data-i="${i}">${o.t}</button>`).join('')}</div>`;
+    document.body.appendChild(bg);
+    bg.querySelectorAll('button').forEach(b=>b.onclick=()=>{bg.remove();resolve(opts[+b.dataset.i].v)});
+  });
+}
+function goBack(exit){
+  const mb=document.querySelector('.modal-bg button,.confirm [data-a=n]');if(mb){mb.click();return}
+  if($('#drawer').classList.contains('open')){closeDrawer();return}
+  if(backHook&&backHook.v===cur&&backHook.f())return;
+  const h=location.hash.replace('#','');
+  if(h.startsWith('aula-'))go('aulas');
+  else if(h&&h!=='hoje'&&h!=='login')go('hoje');
+  else if(exit)exit();
+}
 function go(v){if(location.hash.replace('#','')===v)route();else location.hash=v}
 function route(){
   let h=location.hash.replace('#','')||'hoje';
@@ -463,6 +504,7 @@ function route(){
   const changed=cur!==h;cur=h;
   document.querySelectorAll('main > .view').forEach(s=>s.classList.toggle('on',s.id==='v-'+h));
   document.body.classList.toggle('nodrawer',h==='login');
+  $('#backBtn').hidden=h==='hoje'||h==='login';
   $('#topTitle').textContent=TITLES[h]||'Rota AWS';
   renderNav();
   if(h==='aulas'){if(aula)showAula(aula);else{openAula=null;$('#aulaView').hidden=true;$('#aulaView').innerHTML='';$('#aulasCat').hidden=false;renderAulas()}}
@@ -484,12 +526,14 @@ function renderView(h){
 const STATIC_RENDER=new Set(['hoje','pomodoro','estudos','config','login']);
 function renderAll(){if(STATIC_RENDER.has(cur)||cur==='aulas')renderView(cur);renderNav();if(cur!=='pomodoro')tick()}
 
+$('#backBtn').onclick=()=>goBack();
 $('#menuBtn').onclick=()=>$('#drawer').classList.contains('open')?closeDrawer():openDrawer();
 $('#scrim').onclick=closeDrawer;
 document.addEventListener('click',e=>{const g=e.target.closest('[data-go]');if(g)go(g.dataset.go)});
 $('#miniTimer').onclick=()=>go('pomodoro');
 $('#pStart').onclick=()=>{T.rodando?pauseT():startT()};
 $('#pSkip').onclick=skipT;
+$('#pRestart').onclick=restartT;
 $('#pStop').onclick=stopT;
 $('#pomoMat').onchange=e=>{if(!(T.rodando&&T.fase==='foco')){T.m=e.target.value;saveT();renderPomo()}};
 ['Foco','Pausa','Longa','Ciclos'].forEach(k=>$('#cf'+k).addEventListener('change',e=>{const p=pc();const v=Math.round(+e.target.value);const lim={Foco:[5,120],Pausa:[1,30],Longa:[5,60],Ciclos:[2,8]}[k];p[k.toLowerCase()]=Math.min(lim[1],Math.max(lim[0],v||lim[0]));save('cfg');if(!T.rodando&&T.rest!=null&&T.rest>faseDur(T.fase)){T.rest=null;saveT()}renderPomo()}));
@@ -511,13 +555,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();re
   $('#manMat').innerHTML=matOpts((cycleState().next||{}).m||'s01');
   $('#manData').value=dkey();$('#tData').value=dkey();
   if(T.rodando&&Date.now()>=T.fim)completePhase(false);else if(T.rodando)armAlert();
-  setupNative(exit=>{
-    const h=location.hash.replace('#','');
-    if($('#drawer').classList.contains('open'))closeDrawer();
-    else if(h.startsWith('aula-'))go('aulas');
-    else if(h&&h!=='hoje'&&h!=='login')go('hoje');
-    else exit();
-  });
+  setupNative(exit=>goBack(exit));
   await startSync({read:n=>S[n]??local.get(n),apply:applyRemote,status:setSync});
   route();
   setInterval(tick,250);
@@ -533,6 +571,7 @@ function authMsg(err){
   if(/already registered|already been registered/i.test(t))return 'Esse e-mail já tem conta. Use "Entrar".';
   if(/password should be at least|weak/i.test(t))return 'A senha precisa ter pelo menos 6 caracteres.';
   if(/rate limit|too many/i.test(t))return 'Muitas tentativas. Espere alguns minutos e tente de novo.';
+  if(/timeout/i.test(t))return 'O login demorou mais de 20 segundos sem resposta. Confira a internet e tente de novo.';
   if(/fetch|network/i.test(t))return 'Sem conexão com a internet.';
   return 'Não deu certo: '+t;
 }
@@ -609,7 +648,7 @@ function renderConfig(){
 function aulaMateria(id){const a=(catalog||[]).find(x=>x.id===id);return a?a.materia:'rev'}
 const listeners=[];
 function onEvent(type,data){listeners.forEach(f=>{try{f(type,data)}catch(e){console.warn(e)}})}
-export const ctx={S,getDoc,save,local,$,esc,clone,pad,dkey,parseKey,addDays,weekStart,fmtDate,fmtH,fmtClock,fmtClockH,toast,uid,MM,MAT,FASES,DOM,DM,go,renderAll,renderNav,loadCatalog,fetchAula,aulaMateria,minutesOn,streak,cycleState,beep,unlockAudio,isNative,EXT,modOn,onEvent,listen:f=>listeners.push(f),logMonths,registerDoc:(n,d)=>{DEF[n]=d}};
+export const ctx={S,getDoc,save,local,$,esc,clone,pad,dkey,parseKey,addDays,weekStart,fmtDate,fmtH,fmtClock,fmtClockH,toast,uid,MM,MAT,FASES,DOM,DM,go,renderAll,renderNav,loadCatalog,fetchAula,aulaMateria,minutesOn,streak,cycleState,beep,beepT,unlockAudio,setBack:f=>{backHook=f?{v:cur,f}:null},askExit,askPermission,scheduleSeries,cancelSeries,isNative,EXT,modOn,onEvent,listen:f=>listeners.push(f),logMonths,registerDoc:(n,d)=>{DEF[n]=d}};
 initQuest(ctx);
 initRevisao(ctx);
 initExtras(ctx);

@@ -103,8 +103,20 @@ async function allCards(todas) {
   return out;
 }
 
+async function sairFlash(v) {
+  if (!deck) return;
+  if (document.querySelector('.modal-bg')) return;
+  if (!deck.feitos) { deck = null; C.setBack(null); C.renderNav(); renderFlash(v); return; }
+  const r = await C.askExit('Sair dos flashcards?', `Você já respondeu ${deck.feitos} ${deck.feitos === 1 ? 'card' : 'cards'} nesta sessão.`, [{ t: 'Continuar', v: 'cont', cls: 'primary' }, { t: 'Salvar o que fiz', v: 'salvar' }, { t: 'Descartar a sessão', v: 'desc', cls: 'danger' }]);
+  if (r === 'cont') return;
+  if (r === 'desc') { const rv = R(); rv.fc = deck.snap.fc; rv.novos = deck.snap.novos; C.save('rev'); C.toast('Sessão descartada.'); }
+  else C.toast('Respostas salvas.');
+  deck = null; C.setBack(null); C.renderNav(); renderFlash(v);
+}
+
 async function renderFlash(v) {
   if (deck) return drawCard(v);
+  C.setBack(null);
   v.innerHTML = '<p class="empty">Carregando flashcards…</p>';
   const todas = !!C.local.get('flashTodas');
   const cards = await allCards(todas);
@@ -121,22 +133,24 @@ async function renderFlash(v) {
       <label class="toggle"><span class="t">Incluir aulas ainda não estudadas</span><input class="sw" type="checkbox" id="fcTodas" ${todas ? 'checked' : ''}></label></div>`;
   v.querySelector('#fcTodas').onchange = (e) => { C.local.set('flashTodas', e.target.checked); renderFlash(v); };
   const st = v.querySelector('#fcStart');
-  if (st) st.onclick = () => { deck = { fila: [...due, ...novos].sort(() => Math.random() - 0.5), feitos: 0, sabia: 0, total: due.length + novos.length }; drawCard(v); };
+  if (st) st.onclick = () => { deck = { fila: [...due, ...novos].sort(() => Math.random() - 0.5), feitos: 0, sabia: 0, total: due.length + novos.length, snap: C.clone({ fc: r.fc, novos: r.novos }) }; drawCard(v); };
 }
 
 function drawCard(v) {
   if (!deck.fila.length) {
     v.innerHTML = `<div class="vhead"><h1>Sessão concluída ✓</h1></div><div class="card"><p>${deck.total} cards revisados. Você sabia ${deck.sabia} de ${deck.feitos} respostas.</p><div class="row"><button class="btn primary" type="button" id="fcBack">Voltar</button></div></div>`;
+    C.setBack(null);
     v.querySelector('#fcBack').onclick = () => { deck = null; renderFlash(v); };
     C.onEvent('flash');
     return;
   }
+  C.setBack(() => { sairFlash(v); return true; });
   const c = deck.fila[0];
   const m = C.MM[c.a.materia] || { c: '#888', n: '' };
   v.innerHTML = `<div class="row between"><span class="k">${C.esc(m.n)} · Aula ${c.a.numero} · ${C.esc(c.k)}</span><span class="small muted num">${deck.fila.length} restantes</span></div>
     <button type="button" class="fc big-fc" id="fcCard" aria-pressed="false"><span class="fk">${c.k}</span><span class="front">${c.f}</span><span class="back">${c.b}</span><span class="small muted fc-hint">Toque para ver a resposta</span></button>
     <div class="row fc-ans" id="fcAns" hidden><button class="btn" type="button" id="fcNo" style="flex:1;border-color:var(--bad)">Não sabia</button><button class="btn" type="button" id="fcYes" style="flex:1;border-color:var(--ok)">Sabia</button></div>
-    <div class="row"><button class="btn sm ghost" type="button" id="fcStop">Encerrar sessão</button></div>`;
+    <div class="row"><button class="btn sm ghost" type="button" id="fcStop">Sair da sessão</button></div>`;
   const card = v.querySelector('#fcCard');
   card.onclick = () => { card.classList.add('on'); card.setAttribute('aria-pressed', 'true'); v.querySelector('#fcAns').hidden = false; };
   const answer = (ok) => {
@@ -156,7 +170,7 @@ function drawCard(v) {
   };
   v.querySelector('#fcYes').onclick = () => answer(true);
   v.querySelector('#fcNo').onclick = () => answer(false);
-  v.querySelector('#fcStop').onclick = () => { deck = null; C.renderNav(); renderFlash(v); };
+  v.querySelector('#fcStop').onclick = () => sairFlash(v);
 }
 
 const LEMB = [

@@ -240,16 +240,18 @@ export async function renderErros(v) {
   const ids = Object.keys(q.erros).filter((id) => byId[id]);
   if (errosSess) {
     const sess = errosSess;
+    C.setBack(() => { sairErros(v); return true; });
     const draw = () => {
       const sc = score(sess, byId);
       const fim = sc.done === sc.total;
-      v.innerHTML = `<div class="row between"><div class="vhead"><h1>Refazendo erros</h1><p class="muted">Acertou, saiu do caderno. Errou de novo, continua nele.</p></div><button class="btn sm" type="button" id="erSair">${fim ? 'Concluir' : 'Parar'}</button></div><div id="erRun" style="display:grid;gap:16px">${runnerHTML(sess, byId, { instant: true })}</div>${scoreBar(sc, `<div class="grow muted small">${sc.done} de ${sc.total}</div>`)}`;
+      v.innerHTML = `<div class="row between"><div class="vhead"><h1>Refazendo erros</h1><p class="muted">Acertou, saiu do caderno. Errou de novo, continua nele.</p></div><button class="btn sm" type="button" id="erSair">${fim ? 'Concluir' : 'Sair'}</button></div><div id="erRun" style="display:grid;gap:16px">${runnerHTML(sess, byId, { instant: true })}</div>${scoreBar(sc, `<div class="grow muted small">${sc.done} de ${sc.total}</div>`)}`;
       bindRunner(v.querySelector('#erRun'), sess, byId, { instant: true }, () => { const y = window.scrollY; draw(); window.scrollTo(0, y); });
-      v.querySelector('#erSair').onclick = () => { errosSess = null; renderErros(v); };
+      v.querySelector('#erSair').onclick = () => { if (fim) { errosSess = null; C.setBack(null); renderErros(v); } else sairErros(v); };
     };
     draw();
     return;
   }
+  C.setBack(null);
   const grp = {};
   ids.forEach((id) => {
     const it = byId[id];
@@ -265,7 +267,7 @@ export async function renderErros(v) {
       <div class="list">${ord.map((k) => `<div class="li"><span class="dot" style="--c:${color(k) || 'var(--q)'}"></span><span class="t">${C.esc(label(k))}</span><span class="num small">${grp[k].length}</span><button class="btn sm" type="button" data-k="${C.esc(k)}">Refazer</button></div>`).join('')}</div></div>
       <div class="card"><h2>Questões no caderno</h2><div class="list">${ids.slice(0, 60).map((id) => { const it = byId[id]; return `<details class="erro"><summary><span class="dot" style="--c:${C.DM[it.d]?.c}"></span> ${it.e}</summary><div class="small">${it.o.map((o, i) => `<p>${it.g.includes(i) ? '✓' : '✗'} <b>${LET[i]}.</b> ${o}${it.x[i] ? ` <span class="muted">${it.x[i]}</span>` : ''}</p>`).join('')}</div><p class="small muted">${C.esc(it.aulaNome)} · ${C.esc(it.sv.join(', '))} · no caderno desde ${C.fmtDate(q.erros[id].desde)}</p></details>`; }).join('')}</div></div>`
     : `<div class="card accent" style="--c:var(--ok)"><h2>Caderno vazio 🎯</h2><p class="muted">Nenhum erro pendente. As questões que você errar daqui em diante aparecem aqui.</p></div>`}`;
-  const start = (list) => { errosSess = { itens: shuffle([...new Set(list)]).slice(0, 30).sort((a, b) => (byId[a].sitKey < byId[b].sitKey ? -1 : 1)), resp: {} }; renderErros(v); };
+  const start = (list) => { errosSess = { snap: C.clone({ hist: q.hist, erros: q.erros }), itens: shuffle([...new Set(list)]).slice(0, 30).sort((a, b) => (byId[a].sitKey < byId[b].sitKey ? -1 : 1)), resp: {} }; renderErros(v); };
   const all = v.querySelector('#erAll'); if (all) all.onclick = () => start(ids);
   v.querySelectorAll('#erModo button').forEach((b) => b.onclick = () => { errosModo = b.dataset.m; renderErros(v); });
   v.querySelectorAll('[data-k]').forEach((b) => b.onclick = () => start(grp[b.dataset.k]));
@@ -275,13 +277,58 @@ function simGet() { return C.local.get('sim'); }
 function simSet(s) { C.local.set('sim', s); }
 let simTick = null;
 
+async function sairErros(v) {
+  const sess = errosSess;
+  if (!sess || document.querySelector('.modal-bg')) return;
+  const feitas = Object.values(sess.resp).filter((r) => r && r.done).length;
+  if (!feitas) { errosSess = null; C.setBack(null); renderErros(v); return; }
+  const r = await C.askExit('Sair do refazer erros?', `Você já respondeu ${feitas} ${feitas === 1 ? 'questão' : 'questões'} nesta rodada.`, [{ t: 'Continuar', v: 'cont', cls: 'primary' }, { t: 'Salvar o que fiz', v: 'salvar' }, { t: 'Descartar a rodada', v: 'desc', cls: 'danger' }]);
+  if (r === 'cont') return;
+  if (r === 'desc') { const q = Q(); q.hist = sess.snap.hist; q.erros = sess.snap.erros; C.save('quest'); C.toast('Rodada descartada.'); }
+  else C.toast('Respostas salvas.');
+  errosSess = null; C.setBack(null); C.renderNav(); renderErros(v);
+}
+
+function respondidas(sim) { return sim.itens.filter((id) => sim.resp[id] && sim.resp[id].v && sim.resp[id].v.length); }
+
+async function sairSim(v, sim, byId) {
+  if (document.querySelector('.modal-bg,.confirm')) return;
+  const n = respondidas(sim).length;
+  const opts = [{ t: 'Continuar', v: 'cont', cls: 'primary' }];
+  if (n) opts.push({ t: n === 1 ? 'Salvar o que fiz (entregar a questão respondida)' : `Salvar o que fiz (entregar as ${n} respondidas)`, v: 'salvar' });
+  opts.push({ t: 'Descartar o simulado', v: 'desc', cls: 'danger' });
+  const r = await C.askExit('Sair do simulado?', n ? `Você respondeu ${n} de ${sim.itens.length} questões. O tempo continua correndo enquanto o simulado estiver aberto.` : 'Você ainda não respondeu nenhuma questão.', opts);
+  if (r === 'salvar') return finishSim(v, sim, byId, false, true);
+  if (r === 'desc') { clearInterval(simTick); C.cancelSeries(); simSet(null); C.setBack(null); C.toast('Simulado descartado.'); renderSimulados(v); }
+}
+
+function avisoTempo(sim, left) {
+  const w = (sim.modo === 'prova' ? 10 : 5) * 60000;
+  if (sim.dur <= w * 2 || left > w || left <= 0) return;
+  sim.av = sim.av || {};
+  if (sim.av.w) return;
+  sim.av.w = true; simSet(sim);
+  C.beepT(); C.toast(`Faltam ${Math.ceil(left / 60000)} minutos.`);
+}
+
+function agendaAvisos(sim) {
+  if (C.getDoc('cfg').somAviso === false) return;
+  const fim = sim.ini + sim.dur;
+  const w = (sim.modo === 'prova' ? 10 : 5) * 60000;
+  const list = [];
+  if (sim.dur > w * 2) list.push({ at: fim - w, title: `Faltam ${w / 60000} minutos`, body: 'Simulado em andamento no Rota AWS.' });
+  list.push({ at: fim, title: 'Tempo do simulado esgotado', body: 'Abra o Rota AWS para ver o resultado.' });
+  C.scheduleSeries(list);
+}
+
 export async function renderSimulados(v) {
   clearInterval(simTick);
+  C.setBack(null);
   v.innerHTML = '<p class="empty">Carregando banco de questões…</p>';
   const items = await loadBank();
   const byId = Object.fromEntries(items.map((x) => [x.id, x]));
   const sim = simGet();
-  if (sim && !sim.fim) return runSim(v, sim, byId);
+  if (sim && !sim.fim) { C.setBack(() => { sairSim(v, sim, byId); return true; }); return runSim(v, sim, byId); }
   if (sim && sim.fim) return resultSim(v, sim, byId);
   configSim(v, items);
 }
@@ -314,6 +361,7 @@ function configSim(v, items) {
       : `<div class="form">${conf.modo === 'dominio' ? `<label class="f">Domínio<select id="smD">${C.DOM.map((d) => `<option value="${d.id}" ${d.id === conf.dom ? 'selected' : ''}>${C.esc(d.n)} (${d.p}%)</option>`).join('')}</select></label>` : ''}${conf.modo === 'aula' ? `<label class="f">Aula<select id="smA">${aulas.map((a) => `<option value="${a.aula}" ${a.aula === conf.aula ? 'selected' : ''}>${C.esc(a.aulaNome + ' · ' + a.aulaTit)}</option>`).join('')}</select></label>` : ''}${conf.modo === 'servico' ? `<label class="f">Serviço<select id="smS">${svs.map((s) => `<option ${s === conf.sv ? 'selected' : ''}>${C.esc(s)}</option>`).join('')}</select></label>` : ''}<label class="f">Quantidade<input type="number" id="smN" min="5" max="65" value="${conf.n}"></label></div>
       <label class="row small"><input type="checkbox" id="smReal" ${conf.real ? 'checked' : ''}> Sem gabarito até entregar, com o tempo correndo</label>`}
       <label class="row small"><input type="checkbox" id="smEst" ${conf.estudadas ? 'checked' : ''}> Só do que já estudei (aulas marcadas como estudadas)</label>
+      <label class="row small"><input type="checkbox" id="smSom" ${C.getDoc('cfg').somAviso !== false ? 'checked' : ''}> Aviso sonoro, vibração e notificação quando o tempo estiver acabando e quando esgotar</label>
       <p class="small ${disp ? 'muted' : ''}" style="${disp ? '' : 'color:var(--warn)'}">${disp ? `${disp} questões disponíveis com esses filtros.` : 'Nenhuma questão disponível com esses filtros. Desmarque "Só do que já estudei" ou marque aulas como estudadas.'}</p>
       <button class="btn primary" type="button" id="smGo" ${disp ? '' : 'disabled'} style="justify-self:start">Começar</button>
     </div>
@@ -324,8 +372,11 @@ function configSim(v, items) {
     const ss = v.querySelector('#smS'); if (ss) ss.onchange = (e) => { conf.sv = e.target.value; draw(); };
     const sn = v.querySelector('#smN'); if (sn) sn.onchange = (e) => { conf.n = Math.max(5, Math.min(65, +e.target.value || 20)); };
     v.querySelector('#smEst').onchange = (e) => { conf.estudadas = e.target.checked; draw(); };
+    v.querySelector('#smSom').onchange = (e) => { const c = C.getDoc('cfg'); c.somAviso = e.target.checked; C.save('cfg'); if (e.target.checked) { C.unlockAudio(); C.beepT(true); } };
     const sr = v.querySelector('#smReal'); if (sr) sr.onchange = (e) => { conf.real = e.target.checked; };
-    v.querySelector('#smGo').onclick = () => {
+    v.querySelector('#smGo').onclick = async () => {
+      C.unlockAudio();
+      if (C.isNative && C.getDoc('cfg').somAviso !== false) await C.askPermission();
       C.local.set('simConf', conf);
       const pool = filt(conf);
       let chosen = [], falta = 0;
@@ -339,7 +390,9 @@ function configSim(v, items) {
       }
       const dur = (prova ? PROVA.min : Math.ceil(chosen.length * MIN_POR_ITEM)) * 60000;
       const a0 = aulas.find((a) => a.aula === conf.aula);
-      simSet({ id: C.uid(), modo: conf.modo, dom: conf.dom, aula: conf.aula, aulaNome: a0 ? a0.aulaNome : '', sv: conf.sv, real: prova || conf.real, ini: Date.now(), dur, itens: chosen.map((x) => x.id), resp: {}, marc: {}, pos: 0, falta, fim: null });
+      const novo = { id: C.uid(), modo: conf.modo, dom: conf.dom, aula: conf.aula, aulaNome: a0 ? a0.aulaNome : '', sv: conf.sv, real: prova || conf.real, ini: Date.now(), dur, itens: chosen.map((x) => x.id), resp: {}, marc: {}, pos: 0, falta, fim: null };
+      simSet(novo);
+      agendaAvisos(novo);
       renderSimulados(v);
     };
   };
@@ -352,7 +405,7 @@ function runSim(v, sim, byId) {
   const draw = () => {
     const sc = score(sim, byId);
     const answered = Object.values(sim.resp).filter((r) => r.v && r.v.length).length;
-    v.innerHTML = `<div class="sim-top"><div><span class="k">${C.esc(simLabel(sim))}${real ? ' · sem gabarito' : ''}</span><div class="big num" id="smTime"></div></div><div class="row"><span class="muted small num">${answered} de ${sim.itens.length} respondidas</span><button class="btn primary sm" type="button" id="smEnd">Entregar</button><button class="btn ghost sm" type="button" id="smQuit">Abandonar</button></div></div>
+    v.innerHTML = `<div class="sim-top"><div><span class="k">${C.esc(simLabel(sim))}${real ? ' · sem gabarito' : ''}</span><div class="big num" id="smTime"></div></div><div class="row"><span class="muted small num">${answered} de ${sim.itens.length} respondidas</span><button class="btn primary sm" type="button" id="smEnd">Entregar</button><button class="btn ghost sm" type="button" id="smQuit">Sair</button></div></div>
       <div id="smRun" style="display:grid;gap:16px">${runnerHTML(sim, byId, { instant: !real, hideFb: real, editable: real, confirm: !real })}</div>
       ${real ? '' : scoreBar(sc)}
       <div class="row" style="margin-top:6px"><button class="btn primary" type="button" id="smEnd2">Entregar simulado</button></div>`;
@@ -360,12 +413,13 @@ function runSim(v, sim, byId) {
     const end = () => finishSim(v, sim, byId);
     v.querySelector('#smEnd').onclick = () => confirmEnd(v, sim, end);
     v.querySelector('#smEnd2').onclick = () => confirmEnd(v, sim, end);
-    v.querySelector('#smQuit').onclick = () => { simSet(null); renderSimulados(v); };
+    v.querySelector('#smQuit').onclick = () => sairSim(v, sim, byId);
     upd();
   };
   const upd = () => {
     const left = sim.ini + sim.dur - Date.now();
     const el = v.querySelector('#smTime');
+    avisoTempo(sim, left);
     if (el) { el.textContent = (left < 0 ? '00:00' : C.fmtClockH(left)); el.style.color = left < 5 * 60000 ? 'var(--bad)' : ''; }
     if (left <= 0) { clearInterval(simTick); finishSim(v, sim, byId, true); }
   };
@@ -381,7 +435,7 @@ function runProva(v, sim, byId) {
     const n = sim.itens.length;
     const answered = sim.itens.filter((id) => sim.resp[id] && sim.resp[id].v && sim.resp[id].v.length).length;
     const nm = Object.values(sim.marc).filter(Boolean).length;
-    const top = `<div class="sim-top"><div><span class="k">Modo prova real</span><div class="big num" id="smTime"></div></div><div class="row"><span class="muted small num">${answered}/${n} · ${nm} ★</span><button class="btn sm" type="button" id="pvGrid">${grade ? 'Voltar à questão' : 'Revisar todas'}</button><button class="btn primary sm" type="button" id="smEnd">Entregar</button></div></div>`;
+    const top = `<div class="sim-top"><div><span class="k">Modo prova real</span><div class="big num" id="smTime"></div></div><div class="row"><span class="muted small num">${answered}/${n} · ${nm} ★</span><button class="btn sm" type="button" id="pvGrid">${grade ? 'Voltar à questão' : 'Revisar todas'}</button><button class="btn primary sm" type="button" id="smEnd">Entregar</button><button class="btn ghost sm" type="button" id="smQuit">Sair</button></div></div>`;
     if (grade) {
       v.innerHTML = `${top}<div class="card"><h2>Revisão</h2><p class="small muted">Toque no número para ir até a questão. Verde: respondida. ★: marcada para revisar. Contorno: sem resposta.</p><div class="pgrid">${sim.itens.map((id, i) => { const r = sim.resp[id]; const a = r && r.v && r.v.length; return `<button type="button" class="pg${a ? ' a' : ''}${sim.marc[id] ? ' m' : ''}" data-i="${i}">${i + 1}${sim.marc[id] ? '★' : ''}</button>`; }).join('')}</div><div class="row"><button class="btn sm" type="button" id="pvMarc" ${nm ? '' : 'disabled'}>Ir para a 1ª marcada</button><button class="btn sm" type="button" id="pvBl" ${answered < n ? '' : 'disabled'}>Ir para a 1ª sem resposta</button></div></div>`;
       v.querySelectorAll('.pg').forEach((b) => b.onclick = () => { sim.pos = +b.dataset.i; grade = false; simSet(sim); draw(); });
@@ -400,11 +454,13 @@ function runProva(v, sim, byId) {
     }
     v.querySelector('#pvGrid').onclick = () => { grade = !grade; draw(); window.scrollTo(0, 0); };
     v.querySelector('#smEnd').onclick = () => confirmEnd(v, sim, () => finishSim(v, sim, byId));
+    v.querySelector('#smQuit').onclick = () => sairSim(v, sim, byId);
     upd();
   };
   const upd = () => {
     const left = sim.ini + sim.dur - Date.now();
     const el = v.querySelector('#smTime');
+    avisoTempo(sim, left);
     if (el) { el.textContent = (left < 0 ? '00:00' : C.fmtClockH(left)); el.style.color = left < 10 * 60000 ? 'var(--bad)' : ''; }
     if (left <= 0) { clearInterval(simTick); finishSim(v, sim, byId, true); }
   };
@@ -425,8 +481,12 @@ function confirmEnd(v, sim, end) {
   box.querySelector('[data-a=n]').onclick = () => box.remove();
 }
 
-function finishSim(v, sim, byId, porTempo) {
+function finishSim(v, sim, byId, porTempo, soResp) {
   clearInterval(simTick);
+  C.cancelSeries();
+  C.setBack(null);
+  if (soResp) sim.itens = respondidas(sim);
+  if (porTempo) C.beepT();
   const em = C.dkey();
   sim.itens.forEach((id) => { const st = sim.resp[id] || {}; const vv = st.v || []; if (!st.done || sim.real) record(id, vv, byId[id].g, em); sim.resp[id] = { v: vv, done: true }; });
   sim.fim = Date.now();
